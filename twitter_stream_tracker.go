@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strings"
+    "flag"
 )
 
 const TOKEN_FILE = ".twitter_oauth"
@@ -16,15 +17,24 @@ const TOKEN_FILE = ".twitter_oauth"
 var consumerKey string
 var consumerSecret string
 var consumer *oauth.Consumer
+var keyword string
+
+type User struct {
+    Id  int64
+    Screen_Name string
+}
 
 type Tweet struct {
 	Id   int64
 	Text string
+    User User
 }
 
 func initApp() {
-	consumerKey = os.Getenv("TWITTER_CONSUMERKEY")
-	consumerSecret = os.Getenv("TWITTER_CONSUMERSECRET")
+	flag.StringVar(&consumerKey, "ck", "", "Consumer Key")
+	flag.StringVar(&consumerSecret, "cs", "", "Consumer Secret")
+	flag.StringVar(&keyword, "keyword", "London", "search word")
+    flag.Parse()
 
 	consumer = oauth.NewConsumer(
 		consumerKey,
@@ -122,14 +132,9 @@ func main() {
 	}
 
 	if accessToken != nil {
-		if len(os.Args) < 2 {
-			log.Fatal("Not enough argument, please specify search keyword")
-			os.Exit(0)
-		}
-		keyword := os.Args[1]
 
 		result, err := consumer.Post("https://stream.twitter.com/1.1/statuses/filter.json", map[string]string{"track": keyword}, accessToken)
-		
+
 		if err == nil {
 			ch := make(chan *Tweet)
 			go readStream(result.Body, ch)
@@ -140,9 +145,29 @@ func main() {
 				if p == nil {
 					break
 				}
+                if(p.Id == 0) {
+                    continue
+                }
 				fmt.Print(p.Id)
-				fmt.Println(": " + p.Text)
+                fmt.Print(":", p.User.Screen_Name)
+                parts := strings.Split(strings.ToLower(p.Text), " ")
+                counts := make(map[string] int64)
+                for _, word := range parts {
+                    if len(word) < 2 || word[0] == '@' {
+                        continue
+                    }
+                    if count, ok := counts[word]; ok {
+                        counts[word] = count + 1
+                    } else {
+                        counts[word] = 1
+                    }
+                }
+                fmt.Print(":",p.Text)
+				fmt.Print(":", counts)
+                fmt.Println("")
 			}
-		}
+		} else {
+            fmt.Println("Error: %v", err)
+        }
 	}
 }
