@@ -9,10 +9,10 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
-  "regexp"
 )
 
 const TOKEN_FILE = ".twitter_oauth"
@@ -42,13 +42,13 @@ var (
 		"it":   true,
 		"with": true,
 		"that": true,
-  }
-  incWords = map[string]*regexp.Regexp {
-    "love": regexp.MustCompile(`\blove\b`),
-    "hate": regexp.MustCompile(`\bhate\b`),
-    "car": regexp.MustCompile(`\bcar\b`),
-    "home": regexp.MustCompile(`\bhome\b`),
-  }
+	}
+	incWords = map[string]*regexp.Regexp{
+		"love": regexp.MustCompile(`\blove\b`),
+		"hate": regexp.MustCompile(`\bhate\b`),
+		"car":  regexp.MustCompile(`\bcar\b`),
+		"home": regexp.MustCompile(`\bhome\b`),
+	}
 )
 
 type User struct {
@@ -60,7 +60,7 @@ type Tweet struct {
 	Id    int64
 	Text  string
 	User  User
-	Words map[string]int64
+	Words map[string]int
 }
 
 func initApp() {
@@ -141,18 +141,7 @@ func readStream(reader io.Reader, ch chan *Tweet) {
 }
 
 func dealWithTweet(p *Tweet, c chan *Tweet) {
-	parts := strings.Split(strings.ToLower(p.Text), " ")
-	p.Words = make(map[string]int64)
-	for _, word := range parts {
-		if len(word) < 2 || word[0] == '@' {
-			continue
-		}
-		if count, ok := p.Words[word]; ok {
-			p.Words[word] = count + 1
-		} else {
-			p.Words[word] = 1
-		}
-	}
+	p.Words = p.MakeStats()
 
 	c <- p
 
@@ -167,7 +156,7 @@ func showTweets(output chan *Tweet) {
 
 type wordStat struct {
 	word  string
-	count int64
+	count int
 }
 
 type wordStats []wordStat
@@ -188,24 +177,51 @@ func (w ByCount) Less(i, j int) bool {
 	return w.wordStats[i].count < w.wordStats[j].count
 }
 
+func (p *Tweet) MakeStats() map[string]int {
+	words := make(map[string]int)
+	for _, wordDetails := range WordList {
+		words[wordDetails.Word] = len(wordDetails.Regexp.FindAllString(p.Text, -1))
+	}
+	return words
+}
+
+
 func showStats(r *Reservoir) {
 	c := time.Tick(5 * time.Second)
 	for {
 		<-c
 		samples := r.GetSamples()
-		words := make(map[string]wordStat, len(incWords))
+		words := make(map[string]int)
 		for _, sample := range samples {
 			p := sample.(*Tweet)
 
-      for word, regex := range incWords {
-        count := int64(len(regex.FindAllString(p.Text, -1)))
-      	existingCount, _ := words[word]
-				words[word] = wordStat{word, existingCount.count + count}
+			if(p.Words == nil) { 
+				continue
+			}
+
+			for word, count := range p.Words {
+				if len(word) == 0 {
+					continue
+				}
+				words[word] += count
 			}
 		}
-		stats := make([]wordStat, len(words))
-		for _, stat := range words {
-			stats = append(stats, stat)
+
+		stats := make([]wordStat, 1)
+		for word, count := range words {
+			if(len(word) == 0) {
+				continue
+			}
+			weight := float32(1.0)
+			for _, w := range WordList {
+				if(w.Word != word) {
+					continue
+				}
+
+				weight = w.Weight
+				break;
+			}
+			stats = append(stats, wordStat{word:word, count:int(float32(count)*weight)})
 		}
 		sort.Sort(sort.Reverse(ByCount{stats}))
 
@@ -240,35 +256,44 @@ func main() {
 		}
 	}
 
-	if accessToken != nil {
-
-		//result, err := consumer.Post("https://stream.twitter.com/1.1/statuses/filter.json", map[string]string{"track": keyword}, accessToken)
-    result, err := consumer.Get("https://stream.twitter.com/1.1/statuses/sample.json", nil, accessToken)
-
-		if err != nil {
-      fmt.Println("Error: %v", err)
-      return
-    }
-		
-    ch := make(chan *Tweet)
-		output := make(chan *Tweet)
-		go showStats(reservoir)
-		go showTweets(output)
-		go readStream(result.Body, ch)
-
-		for {
-			p := <-ch
-			if p == nil {
-				break
-			}
-			if p.Id == 0 {
-				continue
-			}
-
-			if reservoir.Add(p) {
-				go dealWithTweet(p, output)
-			}
-		}
-		
+	if accessToken == nil {
+		return
 	}
+
+	/*
+	keywords := make([]string, len(WordList))
+	for _, word := range WordList {
+		keywords = append(keywords, word.Word)
+	}
+	keyword = strings.Join(keywords, ",")
+	result, err := consumer.Post("https://stream.twitter.com/1.1/statuses/filter.json", map[string]string{"track": keyword}, accessToken)
+	*/
+	result, err := consumer.Get("https://stream.twitter.com/1.1/statuses/sample.json", nil, accessToken)
+
+	if err != nil {
+		fmt.Println("Error: %v", err)
+		return
+	}
+
+	ch := make(chan *Tweet)
+	output := make(chan *Tweet)
+	go showStats(reservoir)
+	go showTweets(output)
+	go readStream(result.Body, ch)
+
+	for {
+		p := <-ch
+		if p == nil {
+			break
+		}
+		if p.Id == 0 {
+			continue
+		}
+
+		if reservoir.Add(p) {
+			go dealWithTweet(p, output)
+		}
+	}
+
+	
 }
