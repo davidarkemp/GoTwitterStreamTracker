@@ -2,27 +2,89 @@ package main
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 type WordDetails struct {
-	Word, Color, RGBA string
-	Weight            float32
-	Regexp            *regexp.Regexp
+	word, color, rgba       string
+	red, green, blue, alpha string
+	weight                  float32
+	regexp                  *regexp.Regexp
 }
 
 var (
 	escapeRegex = regexp.MustCompile(`[\-\[\\\]\{\}\(\)\*\+\?\.\,\^\$\|\#]`)
 )
 
-func newWordDetails(word, color string, weight float32, rgba string) *WordDetails {
-	escaped := string(escapeRegex.ReplaceAll([]byte(word), []byte(`\\$&`)))
-	
-	regexpString := strings.Join([]string{ `\b`, escaped, `\b`}, ``)
-	return &WordDetails{Word: word, Color: color, RGBA: rgba, Regexp: regexp.MustCompile(regexpString), Weight: weight}
+func parseColorPart(part string) byte {
+	val, _ := strconv.ParseUint(part, 16, 8)
+	return byte(val)
+}
+func parseColor(color string) (r, g, b byte) {
+	r = parseColorPart(color[1:2])
+	g = parseColorPart(color[3:4])
+	b = parseColorPart(color[5:6])
+	return
 }
 
+func newWordDetails(word, color string, weight float32, rgba string) *WordDetails {
+	escaped := string(escapeRegex.ReplaceAll([]byte(word), []byte(`\\$&`)))
 
+	regexpString := strings.Join([]string{`\b`, escaped, `\b`}, ``)
+
+	rgbaSlice := strings.Split(rgba, ",")
+
+	return &WordDetails{
+		word:   word,
+		color:  color,
+		rgba:   rgba,
+		regexp: regexp.MustCompile(regexpString),
+		weight: weight,
+		red:    rgbaSlice[0],
+		green:  rgbaSlice[1],
+		blue:   rgbaSlice[2],
+		alpha:  rgbaSlice[3],
+	}
+}
+
+func (w *WordDetails) Word() string {
+	return w.word
+}
+
+func (w *WordDetails) Color() string {
+	return w.color
+}
+
+func (w *WordDetails) Rgba() string {
+	return w.rgba
+}
+
+func (w *WordDetails) Regexp() *regexp.Regexp {
+	return w.regexp
+}
+
+func (w *WordDetails) Weight() float32 {
+	return w.weight
+}
+
+func (w *WordDetails) Red() string {
+	return w.red
+}
+
+func (w *WordDetails) Green() string {
+	return w.green
+}
+
+func (w *WordDetails) Blue() string {
+	return w.blue
+}
+
+func (w *WordDetails) Alpha() string {
+	return w.alpha
+}
+
+var WordIndex map[string]*WordDetails
 
 var WordList = [...]*WordDetails{
 	newWordDetails(`happy`, `#ffcd05`, 0.65, `255,205,5,30`),
@@ -75,4 +137,11 @@ var WordList = [...]*WordDetails{
 	newWordDetails(`:(`, `#0e1130`, 0.7, `14,17,36,0`),
 	newWordDetails(`:s`, `#5d8e49`, 0.7, `60,131,0,0`),
 	newWordDetails(`:D`, `#993300`, 0.8, `130,58,0,45`),
+}
+
+func init() {
+	WordIndex = make(map[string]*WordDetails)
+	for _, word := range WordList {
+		WordIndex[word.word] = word
+	}
 }
