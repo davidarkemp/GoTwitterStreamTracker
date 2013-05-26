@@ -5,18 +5,20 @@ import (
   "flag"
   "net/http"
   "time"
+  "container/list"
 )
 
 const MAX_TWEETS = 1000
 const REFRESH_INTERVAL = 60 * time.Second
+const MAX_HISTORY = 100
 
 var (
   consumerKey    string
   consumerSecret string
-  
+  globalStats    wordStats
   keyword        string
   reservoir      = NewReservoirSampler(MAX_TWEETS, NewPseudoRangomNumberGenerator())
-  globalStats    []wordStat
+  wordHistory    = make(map[string]*list.List)
 )
 
 func initApp() {
@@ -35,8 +37,18 @@ func showStats() {
     for _, sample := range samples {
       tweets = append(tweets, sample.(*Tweet))
     }
-    globalStats = getStats(tweets)
-    fmt.Println(len(samples), globalStats)
+    stats, raw := getStats(tweets)
+    globalStats = stats
+    fmt.Println("updated stats")
+    for word, count := range raw {
+      if wordHistory[word] == nil {
+        wordHistory[word] = list.New()
+      }
+      wordHistory[word].PushFront(count)
+      for wordHistory[word].Len() > MAX_HISTORY {
+        wordHistory[word].Remove(wordHistory[word].Back())
+      }
+    }
   }
 }
 
@@ -48,7 +60,11 @@ func showAllStats(w http.ResponseWriter, r *http.Request) {
   fmt.Fprintf(w, "<table>")
   for _, stat := range globalStats {
     wordDetails := WordIndex[stat.word]
-    fmt.Fprintf(w, "<tr><td style='background-color:%v'>&nbsp;</td><td>%v</td><td>%v</td></tr>", wordDetails.Color(), stat.word, stat.count)
+    fmt.Fprintf(w, "<tr><td style='background-color:%v'>&nbsp;</td><td>%v</td>", wordDetails.Color(), stat.word)
+    for history:= wordHistory[stat.word].Front(); history != nil; history = history.Next() {
+      fmt.Fprintf(w, "<td>%d<td>",history.Value)
+    }
+    fmt.Fprintf(w, "</tr>")
   }
   fmt.Fprintf(w, "</table>")  
 }

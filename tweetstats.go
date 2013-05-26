@@ -35,8 +35,8 @@ func wordCounts(p *Tweet) map[string]int {
 	return words
 }
 
-func getStats(tweets []*Tweet) (stats []wordStat) {
-	words := make(map[string]int)
+func getWordCounts(tweets []*Tweet) (words map[string]int) {
+	words = make(map[string]int)
 	for _, tweet := range tweets {
 
 		tweetWords := wordCounts(tweet)
@@ -48,6 +48,11 @@ func getStats(tweets []*Tweet) (stats []wordStat) {
 			words[word] += count
 		}
 	}
+	return
+}
+
+func getStats(tweets []*Tweet) (stats []wordStat, words map[string]int) {
+	words = getWordCounts(tweets)
 
 	stats = make([]wordStat, 0, len(words))
 	for word, count := range words {
